@@ -1,0 +1,717 @@
+Script started on Wed 10 Mar 2021 11:56:17 AM EST
+]0;miller_cm@cobra:~/csc310/Prog2[?1034h[miller_cm@cobra Prog2]$ catt [K[K jtar.cpp 
+//Cevontae Miller
+//Jtar
+
+#include <fstream>
+#include <iostream>
+#include "file.h"
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <utime.h>
+#include <string>
+#include <filesystem>
+#include <vector>
+
+
+bool statIsFile(char* file);
+string statProtection(char* file);
+int statSize(char* file);
+string statDate(char* file);
+
+
+using namespace std;
+using recursive_directory_iterator = filesystem::recursive_directory_iterator; //What i will use to recusively get the file paths of all files and directories in a specific directory
+
+int main( int argc, char *argv[])
+{
+
+	string filePath = "";
+	string args="";
+	string protection = "";
+	bool result=true;
+	int check=0;
+	vector<File> fileList;
+	char* holder;
+
+//If not enough arguments for any command are provided throw error
+	if(argc < 2)
+	{
+		cerr << "Error to few arguments provided"<<endl;
+		return 0;
+	}
+
+//Get cla command
+	args = argv[1];
+
+	if(args == "-cf" )
+	{
+		if(argc < 4)
+		{
+			cerr <<"Error -cf requires a minimum of 4 arguments to run"<<endl;
+			return 0;
+		}
+	
+		
+//Loop as many times as files to be tar'd are given
+
+		for(int i=3; i < argc; i++)
+		{
+//Check if the current file is actually a file or a directory			
+			result = statIsFile(argv[i]);
+			holder = argv[i];		
+
+//If file is a directory then mark it as such while creating the file object
+//Also this make sure that the original directory itself is pushed into the vector <File>
+
+			if( result == false)
+			{	
+				File x( holder, statProtection(holder).c_str(), to_string(statSize(holder)).c_str(), statDate(holder).c_str());
+				x.flagAsDir();
+				fileList.push_back(x);
+
+				for(const auto& dirEntry : recursive_directory_iterator(holder)) 
+				{
+
+//Creating file objects for each file and directory in the specified directory
+
+					char pathname[81];
+					strcpy(pathname, dirEntry.path().c_str());
+					File x( pathname, statProtection(pathname).c_str(), to_string(statSize(pathname)).c_str(), statDate(pathname).c_str());
+
+					char name[81];
+					strcpy(name, dirEntry.path().c_str());
+					
+					result = statIsFile( name );
+
+//If the current file is an actual file inside of a directory
+//make sure to not mark it as one
+					if( result == false)
+						x.flagAsDir();
+
+//Push each file into a vector
+					fileList.push_back(x);
+				}
+
+			}
+			else
+			{
+//If the current file is actually just a file
+//create a file object of it and push to vector
+				args = holder;
+				File y( args.c_str(), statProtection(holder).c_str(), to_string(statSize(holder)).c_str(), statDate(holder).c_str()); 
+				fileList.push_back(y);
+				
+			}
+
+		
+		}
+		
+
+//Create Tar File
+		
+		fstream tar(argv[2], ios::out|ios::binary);
+		fstream readIn;	
+		int s = fileList.size();
+		tar.write((char *) &s, sizeof(int));
+	
+		for(int i=0; i<s; i++)
+		{
+
+//Write out number of files to the binary file first
+			tar.write((char*) &fileList[i], sizeof(File));
+
+//For each file write that file and its contents to the binary file
+			if(fileList[i].isADir() == false)
+			{
+				readIn.open(fileList[i].getName(), ios::in);
+				char readFile[ stoi(fileList[i].getSize()) ];
+				readIn.read( readFile, stoi( fileList[i].getSize()) );
+				tar.write( readFile, stoi( fileList[i].getSize()) );
+				readIn.close();
+			}
+		}
+
+		tar.close();
+	}
+	else if(args == "-tf")
+	{
+		if(argc < 3)
+			cerr<< "Error -tf requires a minimum of 3 arguments to run"<<endl;
+		
+		fstream openTar(argv[2], ios::in|ios::binary);
+
+//If the provided Tar file doesnt exist, throw error
+		if(!openTar)
+			cerr << "Provided Tar file does not exist " << endl;
+		
+
+		int tarSize;
+		File nameTar;
+		openTar.read( (char *) &tarSize, sizeof(int));
+
+//Read in the number of string paths in Tar and loop that many times
+		for(int i=0; i< tarSize; i++)
+		{
+			openTar.read( (char *) &nameTar, sizeof(File));
+			cout << nameTar.getName() << endl;
+
+//Skip over file contents
+			if(nameTar.isADir() == false)
+				openTar.seekg(stoi(nameTar.getSize()), ios::cur); 		
+		}
+		openTar.close();	
+
+	}
+	else if(args == "-xf")
+	{
+		if(argc < 3)
+			cerr<< "Error -xf requries a minimum of 3 arguments to run"<<endl;
+
+//Open Tar file
+		fstream openTarFile(argv[2], ios::in|ios::binary);
+
+		int tarFileSize;
+		File nameTarFile;
+
+//Get number of files in Tar		
+		openTarFile.read( (char *) &tarFileSize, sizeof(int));
+		
+		for(int i=0; i< tarFileSize; i++)
+		{
+			openTarFile.read( (char *) &nameTarFile, sizeof(File));
+
+			if(nameTarFile.isADir() == false)
+			{
+
+//Open a file with the name given from the binary file and feel its contents
+				fstream	x;
+				x.open(nameTarFile.getName().c_str(), ios::out);	
+				char fileContent[ stoi(nameTarFile.getSize()) ];
+				openTarFile.read( fileContent , sizeof(fileContent) );
+				x.write( fileContent, sizeof(fileContent) );
+				x.close();
+			}
+			else
+			{
+
+//If directory already not created, create a directory with binary file given name
+				fstream alive(nameTarFile.getName().c_str(), ios::in);
+
+				if(!alive)
+				{
+					system( ("mkdir " + nameTarFile.getName()).c_str()  );
+				}
+				
+			
+			}
+		}	
+	
+
+	}
+	else if(args == "--help")
+	{
+		cout <<endl;
+
+		cout << "	jtar -cf tarfile file1 dir1... : Specifies jtar to make a tar file named tarfile basedon the files or directories following the name of the tarfile."<<endl; 
+		cout << "		All files in this assignment will be text files. No files will be symbolic or hard links." <<endl;
+
+		cout<<endl;
+		cout<<endl;
+
+		cout <<"	jtar -tf tarfile: Specifies jtar to list the names of all files that have packed into a tarfile."<<endl; 
+		cout <<"		It does not recreate anything." <<endl;
+	
+		cout<<endl;
+		cout<<endl;
+	
+		cout <<"	jtar -xf tarfile: Specifies jtar to read a tar file, and recreate all the files saved in that tarfile."<<endl; 
+		cout <<"		This includes making any directories that must exist to hold the files. The files thus created should be exactly like the original files."<<endl; 
+		cout <<"		This means that they should have the same access and modification times, and the same protection modes." <<endl;
+
+
+		cout <<endl;
+	}
+	else
+		cerr << "Error incorrect arguments provided"<<endl;
+
+
+	return 0;
+}
+
+//Return if file is actually a file or a directory
+bool statIsFile(char* file)
+{
+        struct stat buf;
+        struct utimbuf timebuf;
+        char *token;
+
+        lstat (file, &buf);
+
+        if (S_ISREG(buf.st_mode))
+                return true;
+                
+	else
+		return false;
+
+
+}
+//Return Pmode of file
+string statProtection(char* file)
+{
+        struct stat buf;
+        struct utimbuf timebuf;
+        char *token;
+	string prot = "";
+
+        lstat (file, &buf);
+
+        if (S_ISREG(buf.st_mode))
+   	{
+		prot.append(to_string( (buf.st_mode & S_IRWXU) >> 6));		
+		prot.append(to_string( (buf.st_mode & S_IRWXG) >> 3));
+		prot.append(to_string( (buf.st_mode & S_IRWXO) ));
+		return prot;
+	}
+        else
+                return prot;
+        
+}
+//Return size of file
+int statSize(char* file)
+{
+	struct stat buf;
+	struct utimbuf timebuf;
+	char *token;
+
+	lstat (file, &buf);
+	return buf.st_size;
+}
+//Return timestamp of file
+string statDate(char* file)
+{
+        struct stat buf;
+        struct utimbuf timebuf;
+        char *token;
+	string time = "";
+
+        lstat (file, &buf);
+        if (S_ISREG(buf.st_mode))
+        {				  
+		char stamp[16];
+		strftime(stamp, 16, "%Y%m%d%H%M.%S", localtime(&buf.st_ctime));
+		time = stamp;
+		return time;
+        }
+        else
+        	return time;
+}
+]0;miller_cm@cobra:~/csc310/Prog2[miller_cm@cobra Prog2]$ [K[miller_cm@cobra Prog2]$ [K[miller_cm@cobra Prog2]$ clear
+[3;J[H[2J]0;miller_cm@cobra:~/csc310/Prog2[miller_cm@cobra Prog2]$ cat file.h
+using namespace std;
+#include <string>
+#include <cstring>
+#include <fstream>
+#include <iostream>
+#include <cstdlib>
+#include <cstdio>
+
+class File
+{
+   public :
+       File (const File& otherFile); //copy constructor (deep copy)
+       File (const char name[], const char pmode[], //explicit constructor
+             const char size[], const char stamp[]); 
+       File (); // default constructor
+       File & operator = (const File& otherFile); // a file object to another object and get a deep copy
+       string getSize() const;
+       string getName() const;
+       string getPmode() const;
+       string getStamp() const;
+       int recordSize() const;
+       void flagAsDir(); // marks it as a directory and not a file
+       bool isADir() const; // getter for ^
+
+   private :
+       char name[81], pmode[5], size[7], stamp[16];
+       bool ADir;
+};
+]0;miller_cm@cobra:~/csc310/Prog2[miller_cm@cobra Prog2]$ cat file.cpp 
+
+#include "file.h"
+
+bool File::isADir() const
+{
+	return ADir;
+}
+
+void File::flagAsDir()
+{
+	ADir = true;
+}
+
+int File::recordSize() const
+{
+	return (strlen(name)+strlen(pmode)+strlen(size)+strlen(stamp));
+}
+
+string File::getName() const
+{
+	return name;
+}
+
+string File::getPmode() const
+{
+	return pmode;
+}
+
+string File::getStamp() const
+{
+	return stamp;
+}
+
+string File::getSize() const
+{
+	return size;
+}
+
+File::File ()
+{
+       strcpy (name, "\0");  strcpy (pmode, "\0");
+       strcpy (size, "\0"); strcpy (stamp, "\0");
+       ADir = false;
+
+}
+
+File::File (const char myName[], const char myPmode[],
+            const char mySize[], const char myStamp[])
+{
+       strcpy (name, myName);  strcpy (pmode, myPmode);
+       strcpy (size, mySize); strcpy (stamp, myStamp);
+       ADir = false;
+}
+
+File & File::operator = (const File& otherFile)
+{
+       strcpy (name, otherFile.name);
+       strcpy (pmode, otherFile.pmode);
+       strcpy (size, otherFile.size);
+       strcpy (stamp, otherFile.stamp);
+       ADir = otherFile.ADir;
+       return *this;
+}
+       
+File::File (const File& otherFile)
+{
+       strcpy (name, otherFile.name);
+       strcpy (pmode, otherFile.pmode);
+       strcpy (size, otherFile.size);
+       strcpy (stamp, otherFile.stamp);
+       ADir = otherFile.ADir;
+}
+]0;miller_cm@cobra:~/csc310/Prog2[miller_cm@cobra Prog2]$ clear
+[3;J[H[2J]0;miller_cm@cobra:~/csc310/Prog2[miller_cm@cobra Prog2]$ cat utility.cpp 
+#include <fstream>
+#include <iostream>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <utime.h>
+using namespace std;
+
+int main(int argc, char ** argv)
+{
+        struct stat buf;
+        struct utimbuf timebuf;
+        char *token;
+
+        for (int i = 1;  i < argc;  i++)
+        {
+                lstat (argv[i], &buf);
+                if (S_ISREG(buf.st_mode))
+                {
+                  cout << argv[i] << ", ";
+                  cout << "regular";
+                  cout << ", size = " << buf.st_size;
+				  cout << ", protection = " << ((buf.st_mode & S_IRWXU) >> 6) << ((buf.st_mode & S_IRWXG) >> 3) << (buf.st_mode & S_IRWXO);
+				  
+				  char stamp[16];
+				  strftime(stamp, 16, "%Y%m%d%H%M.%S", localtime(&buf.st_ctime));
+				  
+				  cout << ", timestamp = " << stamp << endl;
+
+
+                  timebuf.actime = buf.st_atime;
+                  timebuf.modtime = buf.st_mtime;
+
+
+                  utime (argv[i], &timebuf);
+                }
+                else if (S_ISDIR(buf.st_mode))
+                {
+                  cout << argv[i] << ", ";
+                  cout << "directory" << endl;
+                }
+        }
+        return 0;
+}
+
+]0;miller_cm@cobra:~/csc310/Prog2[miller_cm@cobra Prog2]$ clear
+[3;J[H[2J]0;miller_cm@cobra:~/csc310/Prog2[miller_cm@cobra Prog2]$ clearat utility.cpp lear[Kat file.cpp h[K[5Plearat jtar.cpp exit[Ka.out -cf Examples/ rhymes [C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[Cc++ -std=c++17 jtar.cpp file.o;
+]0;miller_cm@cobra:~/csc310/Prog2[miller_cm@cobra Prog2]$ ls
+[0m[01;32ma.out[0m     file.cpp  file.o  [01;32mjtar[0m      midnight  rhymes      utility.cpp
+[01;34mExamples[0m  file.h    help    jtar.cpp  README    typescript
+]0;miller_cm@cobra:~/csc310/Prog2[miller_cm@cobra Prog2]$ a.out -cf Zip.tar midnight Examples/ rhymes 
+]0;miller_cm@cobra:~/csc310/Prog2[miller_cm@cobra Prog2]$ a.out -tf [K[K[K[K[K[K[K[K[K[Kls
+[0m[01;32ma.out[0m     file.cpp  file.o  [01;32mjtar[0m      midnight  rhymes      utility.cpp
+[01;34mExamples[0m  file.h    help    jtar.cpp  README    typescript  [01;31mZip.tar[0m
+]0;miller_cm@cobra:~/csc310/Prog2[miller_cm@cobra Prog2]$ a.out -tf Zip.tar 
+midnight
+Examples/
+Examples/SmallFiles
+Examples/SmallFiles/file1
+Examples/SmallFiles/file2
+Examples/SmallFiles/midnight
+Examples/rhymes
+rhymes
+]0;miller_cm@cobra:~/csc310/Prog2[miller_cm@cobra Prog2]$ a.out -x[K[K[K[K[K[K[K[Kls
+[0m[01;32ma.out[0m     file.cpp  file.o  [01;32mjtar[0m      midnight  rhymes      utility.cpp
+[01;34mExamples[0m  file.h    help    jtar.cpp  README    typescript  [01;31mZip.tar[0m
+]0;miller_cm@cobra:~/csc310/Prog2[miller_cm@cobra Prog2]$ rm -rf Examples/
+]0;miller_cm@cobra:~/csc310/Prog2[miller_cm@cobra Prog2]$ [K[miller_cm@cobra Prog2]$ rm rhymes 
+]0;miller_cm@cobra:~/csc310/Prog2[miller_cm@cobra Prog2]$ rm midnight 
+]0;miller_cm@cobra:~/csc310/Prog2[miller_cm@cobra Prog2]$ clear
+[3;J[H[2J]0;miller_cm@cobra:~/csc310/Prog2[miller_cm@cobra Prog2]$ ls
+[0m[01;32ma.out[0m  file.cpp  file.h  file.o  help  [01;32mjtar[0m  jtar.cpp  README  typescript  utility.cpp  [01;31mZip.tar[0m
+]0;miller_cm@cobra:~/csc310/Prog2[miller_cm@cobra Prog2]$ a.out -xf Zip.tar 
+]0;miller_cm@cobra:~/csc310/Prog2[miller_cm@cobra Prog2]$ ls
+[0m[01;32ma.out[0m  [01;34mExamples[0m  file.cpp  file.h  file.o  help  [01;32mjtar[0m  jtar.cpp  midnight  README  rhymes  typescript  utility.cpp  [01;31mZip.tar[0m
+]0;miller_cm@cobra:~/csc310/Prog2[miller_cm@cobra Prog2]$ cat rhymes 
+
+###
+Probable-Possible, my black hen,
+She lays eggs in the Relative When.
+She doesn't lay eggs in the Positive Now
+Because she's unable to Postulate How.
+
+###
+There was a man in our town,
+An Astrophysicist,
+    Who found a place
+    In Hyperspace
+By just a twist of the wrist.
+
+But when he sought the Near Now
+And gave another twist,
+    He found that he'd
+    Become somehow
+A Cyberneticist.
+
+###
+    Little Bo-Peep
+    Has lost her sheep,
+The radar has failed to find them.
+    They'll all, face to face,
+    Meet in parallel space,
+Preceding their leaders behind them.
+
+###
+This little pig built a spaceship,
+    This little pig paid the bill;
+This little pig made isotopes,
+    This little pig ate a pill;
+And this little pig did nothing at all,
+    But he's just a little pig still.
+
+###
+Flappity, Floppity, Flip!
+The Mouse on the Mobius Strip.
+    The Strip revolved,
+    The Mouse dissolved
+In a chronodimensional skip.
+
+###
+See the little phrases go,
+    Watch their funny antics.
+The men who make them wiggle so
+    Are teachers of Semantics.
+
+The words go up, the words go round
+    And make a great commotion,
+But all that lies behind the sound
+    Is hebetude Boeotian.
+
+###
+The Hydrogen Dog and the Cobalt Cat
+Side by side in the Armory sat.
+Nobody thought about fusion or fission,
+Everyone spoke of their peacetime mission,
+    Till somebody came and opened the door.
+There they were, in a neutron fog,
+The Codrogen Cat and the Hybalt Dog;
+    They mushroomed up with a terrible roar--
+    And Nobody Never was there -- Nomore.
+
+
+-------------------------------------------------
+From:  The Space Child's Mother Goose
+Verses by Frederick Winsor
+Illustrations by Marian Parry
+Copyright 1958
+A Fireside Book Published by Simon and Schuster, New York NY
+ISBN 0-671-21316-4
+LCCCN 58-7574
+-------------------------------------------------
+]0;miller_cm@cobra:~/csc310/Prog2[miller_cm@cobra Prog2]$ clear
+[3;J[H[2J]0;miller_cm@cobra:~/csc310/Prog2[miller_cm@cobra Prog2]$ cat midnight 
+
+                Excerpts from The Soul of a New Machine
+				 
+	The time was the middle sixties.  The computer was a famous
+and closely held marvel; the day had not arrived when curious
+undergraduates could buy the parts and figure out the thing by building
+one themselves.  So he took a course in how to program a computer by
+using a high-level computer language called FORTRAN, which was
+developed for scientists mainly.
+
+	I was a midnight programmer, he confessed.  During the first
+nights after he learned to write a computer program, he would go off
+from the computer room and search the empty building, looking for a
+classroom with a blackboard and some chalk.  He posed problems for
+himself and on the blackboard wrote up little programs for their
+automatic solution.  The he hurried back to the computer to try out
+his programs on the machine.  That was what made it fun;  he could
+actually touch the machine and make it obey him.
+
+	I'd run a little program and when it worked, I'd get a little
+high, and then I'd do another.  It was neat.  I loved writing programs.
+I could control the machine.  I could make it express my own thoughts.
+It was an expansion of the mind to have a computer. The game of
+programming - and it is a game - was so fascinating.  We'd stay up all
+night and experience it.  It really is like a drug, I think.
+]0;miller_cm@cobra:~/csc310/Prog2[miller_cm@cobra Prog2]$ clear
+[3;J[H[2J]0;miller_cm@cobra:~/csc310/Prog2[miller_cm@cobra Prog2]$ cd Examples/
+]0;miller_cm@cobra:~/csc310/Prog2/Examples[miller_cm@cobra Examples]$ cat[K[K[Kls
+rhymes  [0m[01;34mSmallFiles[0m
+]0;miller_cm@cobra:~/csc310/Prog2/Examples[miller_cm@cobra Examples]$ cat rhymes 
+
+###
+Probable-Possible, my black hen,
+She lays eggs in the Relative When.
+She doesn't lay eggs in the Positive Now
+Because she's unable to Postulate How.
+
+###
+There was a man in our town,
+An Astrophysicist,
+    Who found a place
+    In Hyperspace
+By just a twist of the wrist.
+
+But when he sought the Near Now
+And gave another twist,
+    He found that he'd
+    Become somehow
+A Cyberneticist.
+
+###
+    Little Bo-Peep
+    Has lost her sheep,
+The radar has failed to find them.
+    They'll all, face to face,
+    Meet in parallel space,
+Preceding their leaders behind them.
+
+###
+This little pig built a spaceship,
+    This little pig paid the bill;
+This little pig made isotopes,
+    This little pig ate a pill;
+And this little pig did nothing at all,
+    But he's just a little pig still.
+
+###
+Flappity, Floppity, Flip!
+The Mouse on the Mobius Strip.
+    The Strip revolved,
+    The Mouse dissolved
+In a chronodimensional skip.
+
+###
+See the little phrases go,
+    Watch their funny antics.
+The men who make them wiggle so
+    Are teachers of Semantics.
+
+The words go up, the words go round
+    And make a great commotion,
+But all that lies behind the sound
+    Is hebetude Boeotian.
+
+###
+The Hydrogen Dog and the Cobalt Cat
+Side by side in the Armory sat.
+Nobody thought about fusion or fission,
+Everyone spoke of their peacetime mission,
+    Till somebody came and opened the door.
+There they were, in a neutron fog,
+The Codrogen Cat and the Hybalt Dog;
+    They mushroomed up with a terrible roar--
+    And Nobody Never was there -- Nomore.
+
+
+-------------------------------------------------
+From:  The Space Child's Mother Goose
+Verses by Frederick Winsor
+Illustrations by Marian Parry
+Copyright 1958
+A Fireside Book Published by Simon and Schuster, New York NY
+ISBN 0-671-21316-4
+LCCCN 58-7574
+-------------------------------------------------
+]0;miller_cm@cobra:~/csc310/Prog2/Examples[miller_cm@cobra Examples]$ clear
+[3;J[H[2J]0;miller_cm@cobra:~/csc310/Prog2/Examples[miller_cm@cobra Examples]$ ls[K[Kcd SmallFiles/
+]0;miller_cm@cobra:~/csc310/Prog2/Examples/SmallFiles[miller_cm@cobra SmallFiles]$ ls
+file1  file2  midnight
+]0;miller_cm@cobra:~/csc310/Prog2/Examples/SmallFiles[miller_cm@cobra SmallFiles]$ cat file1
+Andy Taylor Senior 98
+Bee Taylor Junior 66
+Gomer Pyle Junior 78
+Floyd Sprague Sophomore 38
+Opie Taylor Freshman 11 
+]0;miller_cm@cobra:~/csc310/Prog2/Examples/SmallFiles[miller_cm@cobra SmallFiles]$ cat file1[K2
+Andy Taylor Senior 98
+Barney Fife Senior 120
+Bee Taylor Junior 66
+Gomer Pyle Junior 78
+Floyd Sprague Sophomore 38
+Opie Taylor Freshman 15 
+]0;miller_cm@cobra:~/csc310/Prog2/Examples/SmallFiles[miller_cm@cobra SmallFiles]$ cat midnight 
+
+                Excerpts from The Soul of a New Machine
+				 
+	The time was the middle sixties.  The computer was a famous
+and closely held marvel; the day had not arrived when curious
+undergraduates could buy the parts and figure out the thing by building
+one themselves.  So he took a course in how to program a computer by
+using a high-level computer language called FORTRAN, which was
+developed for scientists mainly.
+
+	I was a midnight programmer, he confessed.  During the first
+nights after he learned to write a computer program, he would go off
+from the computer room and search the empty building, looking for a
+classroom with a blackboard and some chalk.  He posed problems for
+himself and on the blackboard wrote up little programs for their
+automatic solution.  The he hurried back to the computer to try out
+his programs on the machine.  That was what made it fun;  he could
+actually touch the machine and make it obey him.
+
+	I'd run a little program and when it worked, I'd get a little
+high, and then I'd do another.  It was neat.  I loved writing programs.
+I could control the machine.  I could make it express my own thoughts.
+It was an expansion of the mind to have a computer. The game of
+programming - and it is a game - was so fascinating.  We'd stay up all
+night and experience it.  It really is like a drug, I think.
+]0;miller_cm@cobra:~/csc310/Prog2/Examples/SmallFiles[miller_cm@cobra SmallFiles]$ cd.[K[K[Kexit
+exit
+
+Script done on Wed 10 Mar 2021 11:58:36 AM EST

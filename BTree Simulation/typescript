@@ -1,0 +1,1752 @@
+Script started on Fri 07 May 2021 02:14:57 PM EDT
+]0;miller_cm@cobra:~/csc310/Prog3[?1034h[miller_cm@cobra Prog3]$ cat Btree.h[K[K[K[K[K[K[Kbtree.h 
+
+#include <vector>
+#include <set>
+#include <iostream>
+#include <cstring>
+#include <string>
+#include <cstdlib>
+#include "album.h"
+using namespace std;
+
+#ifndef BTREE_H
+#define BTREE_H
+
+class Album;
+const int ORDER = 5;
+typedef Album keyType;
+typedef int IndexArray[ORDER];
+typedef keyType ValueArray[ORDER-1];
+
+struct BTNode
+{
+        int currSize;
+        ValueArray contents;
+        IndexArray child;
+}; 
+
+struct Pair
+{
+        Album element;
+        int loffset;
+        int roffset;
+        friend bool operator < (const Pair& p1, const Pair& p2)
+           { return (p1.element < p2.element);  }
+};
+
+class BTree
+{
+ public:
+	BTree();
+	void writeHeader (char * fileName);
+	void insert (keyType key);
+	void reset (char * filename);
+	void close ();
+	void printTree();
+	void inorder();
+	void reverse();
+	int getHeight();
+	bool search (string key);
+	keyType retrieve (string key);
+	void totalio() const;
+
+
+ private:
+	BTNode root;
+        int rootAddr;
+	char treeFileName[80];
+	fstream treeFile;
+	int height;
+	void printTree (int rootAddr);
+	void inorder (int rootAddr);
+	void reverse (int rootAddr);
+	int read;
+	int write;
+
+	int findAddr (keyType key, BTNode t, int tAddr);
+	int findpAddr(keyType key, BTNode t, int tAddr, int cAddr);
+	void insert (keyType key, int recAddr, int oneAddr, int twoAddr);
+        BTNode getNode (int recAddr);
+	void printNode(int recAddr);
+        void placeNode (keyType k,int recAddr,int oneAddr,int twoAddr);
+	bool isLeaf (int recAddr);
+	bool isLeaf(BTNode t);
+	int countLeaves(int recAddr);
+        void adjRoot (keyType rootElem, int oneAddr, int twoAddr);
+        void splitNode (keyType& key,int recAddr,int& oneAddr,int& twoAddr);
+	bool search (string key, BTNode t, int tAddr);
+	
+};
+
+#endif
+]0;miller_cm@cobra:~/csc310/Prog3[miller_cm@cobra Prog3]$ cat btree.cpp 
+#include "btree.h"
+
+BTree::BTree()
+{
+    height=0;
+    read =0;
+    write =1;
+    root.currSize =0;
+}
+
+//Using a existing file create a BTree
+void BTree::writeHeader(char * fileName)
+{
+    strcpy(treeFileName,fileName);
+    treeFile.open(treeFileName,ios::in|ios::out|ios::binary|ios::trunc);
+    treeFile.seekg(0,ios::beg);
+    BTNode header;
+    treeFile.read((char *) &header, sizeof(BTNode));
+    read++;
+    rootAddr = header.child[0];
+    root = getNode(rootAddr);
+
+}
+//Call private insert method
+void BTree::insert (keyType key)
+{
+    insert(key, rootAddr, -1, -1);
+}
+
+//Create a completely new BTree without an existing root from the file argument
+void BTree::reset (char * fileName)
+{
+    //Initial variables set    
+    height=0;
+    read =0;
+    write =1;
+
+    strcpy(treeFileName,fileName);
+    treeFile.open(treeFileName,ios::in|ios::out|ios::binary);
+    treeFile.seekg(0,ios::beg);
+    BTNode header;
+    header.child[0] = sizeof(BTNode);
+    treeFile.write((char *) &header, sizeof(BTNode));
+    write++;
+    root.currSize = 0;
+    //Set all children to -1
+    for(int i=0; i<5;i++)
+    {
+        root.child[i] = -1;
+    }
+    rootAddr = sizeof(BTNode);
+    treeFile.write((char *) &root, sizeof(root));
+    write++;
+}
+
+void BTree::close()
+{
+    treeFile.close();
+}
+
+void BTree::printTree()
+{
+    printTree(rootAddr);
+}
+
+void BTree::inorder()
+{
+    inorder(rootAddr);
+}
+
+void BTree::reverse()
+{
+    reverse(rootAddr);
+}
+
+int BTree::getHeight()
+{
+    return height;
+}
+
+bool BTree::search (string key)
+{
+    //BTNode t = getNode(rootAddr);
+    //return search(key,t,rootAddr);
+    return(key,root,rootAddr);
+}
+
+keyType BTree::retrieve (string key)
+{
+    //Check if root is a leaf
+    if(search(key) != false)
+    {
+        BTNode t = getNode(rootAddr);
+
+        for(int i=0; i< t.currSize;i++)
+        {
+            if(strcmp(key.c_str(), t.contents[i].getUPC().c_str()) ==  0)
+            {
+                return t.contents[i];
+            }
+        }
+    }
+    //This return should never be reached
+    keyType dummy;
+    return dummy;
+}
+
+void BTree::totalio() const //Print all read and writes
+{
+    cout << "Number of Reads: " << read <<endl;
+    cout << "Number of Writes: " << write <<endl;
+}
+
+
+//////////////////////////////////PRIVATE METHODS////////////////////////////////////////////////////////////////
+
+void BTree::printNode (int rootAddr)
+{   
+    //Check if root node exists
+    if(rootAddr != -1)
+    {
+        BTNode t = getNode(rootAddr);
+        for(int i=0; i<t.currSize;i++)
+        {
+            cout << t.contents[i] << endl;            
+        }
+    }
+}
+
+void BTree::inorder (int rootAddr)
+{
+    //Check if root exists
+    if(rootAddr != -1)
+    {
+        BTNode t = getNode(rootAddr);
+
+        //Recursively loop through and print the child of each individual branch
+        for(int i=0; i< t.currSize;i++)
+        {
+            inorder(t.child[i]);
+            cout << t.contents[i] << endl;            
+        }
+        inorder(t.child[t.currSize]);
+    }
+
+}
+void BTree::reverse (int rootAddr)
+{
+    //Check if root exists
+    if(rootAddr != -1)
+    {
+        BTNode t = getNode(rootAddr);
+        //Recusively call to print through tree, but start at the leaves and make your way back up to root
+        reverse(t.child[t.currSize]);
+        for(int i=t.currSize-1; i>= 0; i--)
+        {
+            cout << t.contents[i] <<endl;
+            reverse(t.child[i]);
+        }
+    }
+}
+//I ended up not using the regular findAddr
+int BTree::findAddr (keyType key, BTNode t, int tAddr)
+{
+    if(isLeaf(t) == true)
+        return tAddr;
+
+    for(int i=0; i< t.currSize;i++)
+    {
+        if(key < t.contents[i])
+        {
+
+        }
+    }
+    return -1;
+}
+
+int BTree::findpAddr(keyType key, BTNode t, int tAddr, int cAddr)
+{
+    if( cAddr == rootAddr) 
+        return -1;
+    
+    //check to see if the parent address is the current child address we're at
+    for(int i=0;i <= t.currSize;i++)
+    {
+        if(t.child[i] == cAddr)
+        {
+            return tAddr;
+        }
+    }
+    //Compare your key to all contents except the last right address
+    for(int i=0; i< t.currSize;i++)
+    {
+        if(key < t.contents[i] && t.child[i] != -1)
+        {
+            return findpAddr(key, getNode(t.child[i]), t.child[i], cAddr );
+        }
+    }
+    //Check last right address at currSize
+    if(t.child[t.currSize] != -1)
+    {
+        return findpAddr(key, getNode(t.child[t.currSize]), t.child[t.currSize], cAddr);
+    }
+
+    //Please dont reach this, i beg of thee
+    return -5555555;
+}
+
+void BTree::insert (keyType key, int recAddr, int oneAddr, int twoAddr)
+{
+    BTNode t = getNode(recAddr);
+
+    //If this is the first insert
+    if(root.currSize == 0)
+    {
+        cout<<"First Insert here"<<endl;
+        root.contents[0] = key;
+        root.currSize++;
+        treeFile.seekg(recAddr,ios::beg);
+        treeFile.write((char *) &root, sizeof(BTNode));
+        write++;
+
+    }
+    else if(!isLeaf(recAddr))
+    {
+        //If youre not at a leaf compare key to all content except the last branch
+        for(int i = 0; i< t.currSize; i++)
+        {
+            if(key < t.contents[i])
+            {
+                insert(key ,t.child[i] ,oneAddr, twoAddr);
+                return;
+            }
+        }
+        insert(key, t.child[t.currSize], oneAddr, twoAddr);
+        return;
+    }
+    //Check and compare the last branch to see where key fits
+    else if(t.currSize < ORDER -1)
+    {
+        int i;
+        //Slide contents to the left
+        for(i =t.currSize -1; i>=0; i--)
+        {
+            if(key < t.contents[i])
+            {
+                t.contents[i+1] = t.contents[i];
+            }
+            else
+                break;
+        }
+        //Insert key into current position
+        t.contents[i+1] = key;
+        t.currSize++;
+
+        treeFile.seekg(recAddr,ios::beg);
+        treeFile.write((char *) &t, sizeof(BTNode));
+        write++;
+
+        if(recAddr == rootAddr)
+            root = t;
+    }
+    //Splitting time
+    else
+    {
+        cout<<"Split Occurring"<<endl;
+        splitNode (key, recAddr, oneAddr,twoAddr);
+
+    }  
+    
+}
+
+BTNode BTree::getNode (int recAddr)
+{
+    BTNode t;
+    //Jump to address of node,read it in, increment total read, and return it
+    treeFile.seekg(recAddr,ios::beg);
+    treeFile.read((char *) &t, sizeof(BTNode));
+    read++;
+    return t;
+}
+
+void BTree::printTree(int recAddr)
+{
+    //Check if the current node is a leaf
+    if(recAddr != -1)
+    {
+        BTNode dummy = getNode(recAddr);
+        printNode(recAddr);
+        for(int i=0;i<=dummy.currSize;i++)
+        {
+            printTree(dummy.child[i]);
+        }
+    }
+
+}
+
+void BTree::placeNode (keyType key, int recAddr, int oneAddr, int twoAddr)
+{
+    if(recAddr == -1)
+    {
+        adjRoot(key, oneAddr,twoAddr);
+        return;
+    }
+    BTNode t = getNode(recAddr);
+    //Node not full
+    if(t.currSize < ORDER -1)
+    {
+        int i;
+        //Slide contents to the left
+        for(i =t.currSize -1; i>=0; i--)
+        {
+            if(key < t.contents[i])
+            {
+                t.contents[i+1] = t.contents[i];
+                t.child[i+2] = t.child[i+1];
+            }
+            else
+                break;
+        }
+        //Insert key into current position
+        t.contents[i+1] = key;
+        t.child[i+2] = twoAddr;
+        t.currSize++;
+
+        treeFile.seekg(recAddr,ios::beg);
+        treeFile.write((char *) &t, sizeof(BTNode));
+        write++;
+
+        if(recAddr == rootAddr)
+            root = t;
+    }
+    //Splitting time
+    else
+    {
+        cout<<"Split Occurring Again"<<endl;
+        splitNode (key, recAddr, oneAddr,twoAddr);
+
+    }
+}
+
+bool BTree::isLeaf (int recAddr)
+{
+    BTNode t = getNode(recAddr);
+    for(int i=0;i<=t.currSize;i++)
+    {
+        if(t.child[i] != -1)
+        {
+            return false;
+        }
+    }
+    return true;
+
+}
+
+bool BTree::isLeaf(BTNode t)
+{
+    for(int i=0;i<=t.currSize;i++)
+    {
+        if(t.child[i] != -1)
+        {
+            return false;
+        }
+    }
+    return true;
+}	
+
+int BTree::countLeaves(int recAddr)
+{
+    BTNode t = getNode(recAddr);
+    bool isLeaf = true;
+    int sum =0;
+    for(int i=0;i<=t.currSize;i++)
+    {
+        if(t.child[i] != -1)
+        {
+            isLeaf = true;
+            sum += countLeaves(t.child[i]);
+        }
+    }
+    return isLeaf ? 1 : sum;
+}
+
+//Adjust root
+void BTree::adjRoot (keyType rootElem, int oneAddr, int twoAddr)
+{
+    BTNode t;
+    t.child[0] = oneAddr;
+    t.child[1] = twoAddr;
+    t.contents[0] = rootElem;
+    t.currSize = 1;
+    root = t;
+    treeFile.seekg(0,ios::end);
+    rootAddr = treeFile.tellg();
+    treeFile.write((char*) &t, sizeof(BTNode));
+    write++;
+    treeFile.seekg(0,ios::beg);
+    BTNode header;
+    header.child[0] = rootAddr;
+    treeFile.write((char *) &header, sizeof(BTNode));
+    write++;
+    height++;
+
+}
+
+void BTree::splitNode (keyType& key,int recAddr,int& oneAddr,int& twoAddr)
+{
+        BTNode t = getNode(recAddr);
+        BTNode rightNode;
+        keyType temp;
+        int tempAddr;
+
+        //Check if key is the largest value compared to the other values in the node
+        if(key < t.contents[t.currSize-1])
+        {
+            temp = t.contents[t.currSize-1];
+            t.contents[t.currSize-1] = key;
+            key = temp;
+
+            tempAddr = twoAddr;
+            twoAddr = t.child[t.currSize];
+            t.child[t.currSize] = tempAddr;
+
+            //Sort Node now that we added key
+            for(int i= t.currSize-1; i> 0;i--)
+            {
+                if(t.contents[i] < t.contents[i-1])
+                {
+                    temp = t.contents[i-1];
+                    t.contents[i-1] = t.contents[i];
+                    t.contents[i] = temp;
+
+                    tempAddr = t.child[i];
+                    t.child[i] = t.child[i+1];
+                    t.child[i+1] = tempAddr;
+                }
+                else
+                    break;
+            }
+        }
+
+        //Left node now is just size 2 with index 0 and 1
+        int middle = ORDER/2;
+        t.currSize = middle;
+
+        rightNode.currSize = ORDER - 1 - middle;
+        rightNode.contents[0] = t.contents[3];
+        rightNode.contents[1] = key;
+        rightNode.child[0] = t.child[3];
+        rightNode.child[1] = t.child[4];
+        rightNode.child[2] = twoAddr;
+        rightNode.child[3] = -1;
+        rightNode.child[4] = -1;
+
+        treeFile.seekg(recAddr,ios::beg);
+        treeFile.write((char *) &t, sizeof(BTNode));
+
+        treeFile.seekg(0,ios::end);
+        int rightNodeAddress = treeFile.tellg();
+        treeFile.write((char *) &rightNode, sizeof(BTNode));
+        placeNode(t.contents[middle], findpAddr(key,root, rootAddr, recAddr), recAddr ,rightNodeAddress);
+}
+
+bool BTree::search (string key, BTNode t, int tAddr)
+{
+    for(int i=0; i< t.currSize;i++)
+    {
+        //Compare key to album UPC
+        if(strcmp(key.c_str(), t.contents[i].getUPC().c_str()) ==  0)
+        {
+            return true;
+        }
+    }
+
+    for(int i=0; i < t.currSize; i++)
+    {
+        //If key is smaller, then check all UPCs before this value
+        if(key < t.contents[i].getUPC())
+        {
+            if(t.child[i] == -1)
+                return false;
+            else
+                return search(key,getNode(t.child[i]), t.child[i]);
+        }
+    }
+
+    if(t.child[t.currSize] == -1)
+    {
+        return false;
+    }
+    else
+    {
+        //Search branch all the way at the end
+        return search(key,getNode(t.child[t.currSize]), t.child[t.currSize]);
+    }
+    
+}]0;miller_cm@cobra:~/csc310/Prog3[miller_cm@cobra Prog3]$ cat album.cp[K[Kh
+#ifndef ALBUM
+#define ALBUM
+
+#include <cstring>
+#include <string>
+#include <fstream>
+using namespace std;
+
+const int UpTo = 50;
+typedef char String[UpTo];
+
+class Album
+{
+   public :
+       Album (const Album& otherAlbum);
+       Album (String upc, String artist,
+                String title);
+       Album ();
+       Album & operator = (const Album& otherAlbum);
+       friend bool operator < (const Album& a, const Album& b);
+       friend istream & operator >> (istream & stream, Album & C);
+       friend ostream & operator << (ostream & stream, Album & C);
+       string getUPC ();
+       int recordSize();
+
+   private :
+       String UPC, Artist, Title;
+};
+#endif
+]0;miller_cm@cobra:~/csc310/Prog3[miller_cm@cobra Prog3]$ cat album.h
+#ifndef ALBUM
+#define ALBUM
+
+#include <cstring>
+#include <string>
+#include <fstream>
+using namespace std;
+
+const int UpTo = 50;
+typedef char String[UpTo];
+
+class Album
+{
+   public :
+       Album (const Album& otherAlbum);
+       Album (String upc, String artist,
+                String title);
+       Album ();
+       Album & operator = (const Album& otherAlbum);
+       friend bool operator < (const Album& a, const Album& b);
+       friend istream & operator >> (istream & stream, Album & C);
+       friend ostream & operator << (ostream & stream, Album & C);
+       string getUPC ();
+       int recordSize();
+
+   private :
+       String UPC, Artist, Title;
+};
+#endif
+]0;miller_cm@cobra:~/csc310/Prog3[miller_cm@cobra Prog3]$ clea[K[K[K[Kclear
+[3;J[H[2J]0;miller_cm@cobra:~/csc310/Prog3[miller_cm@cobra Prog3]$ ls
+album.baby  album.h.gch  album.o      AlbumTest.cpp  btree.h   createBT.cpp  [0m[38;5;34mmyUpdate[0m  trans1.dat  typescript
+album.cpp   album.large  album.rand   [38;5;34ma.out[0m          btree.o   makefile      OUTPUT    trans2.dat  [38;5;34mupdateBT[0m
+album.h     album.med    album.small  btree.cpp      [38;5;34mcreateBT[0m  [38;5;34mmyCreate[0m      README    tree.ind    updateBT.cpp
+]0;miller_cm@cobra:~/csc310/Prog3[miller_cm@cobra Prog3]$ cat createBT.cpp 
+//CreateBT file
+
+#include <fstream>
+#include <iostream>
+#include <string>
+#include "btree.h"
+
+using namespace std;
+
+int main(int argc, char* argv[])
+{
+    if(argc < 3 || argc > 3)
+    {
+        cout << "Sequential File name and B-Tree File name required." <<endl;
+        return 0;
+    }
+
+    char * sequentialFile = argv[1];
+    char * indexFile = argv[2];
+
+    fstream readMaster(argv[1], ios::in);
+    BTree B;
+    B.reset(indexFile);
+    keyType dummy;
+
+    while(readMaster >> dummy)
+    {
+        cout<<"Inserting " <<dummy << "         Current Height: " << B.getHeight() << endl;
+        B.insert(dummy);
+    }    
+
+    cout << "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~" << endl;
+    B.printTree();
+    cout << "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~" << endl;
+    cout<< "Current Height: " << B.getHeight() << endl;
+
+}]0;miller_cm@cobra:~/csc310/Prog3[miller_cm@cobra Prog3]$ cat updateBT.cpp 
+//updateBT file
+
+#include <fstream>
+#include <iostream>
+#include <string>
+#include <sstream>
+#include <string.h>
+#include "btree.h"
+#include "album.h"
+
+
+using namespace std;
+
+int main(int argc, char* argv[])
+{
+    if(argc < 3 || argc > 3)
+    {
+        cout << "Tree File name and Transaction File name required." <<endl;
+        return 0;
+    }
+
+    string treeFile = argv[1];
+    fstream transFile;
+    transFile.open(argv[2], fstream::in);
+    string action;
+    BTree B;
+    keyType dummy;
+
+
+	while(transFile >> action)
+	{
+        //cout <<action <<endl;
+		if(action == "S" || action == "s")
+        {
+            transFile >> action;
+            if( B.search(action) == false)
+                 cout << "      Result of search for \" " << action << " \": Not Found" << endl;
+            else
+                 cout << "      Result of search for \" " << action << " \": Found" << endl;
+
+        }
+        else if(action == "I" || action == "i")
+        {
+            getline(transFile,action);
+            transFile >> dummy;
+            cout << "      Attempting to insert: " << dummy <<endl;
+            B.insert(dummy);
+            cout << "      Insert successful" <<endl;
+        }
+    }
+    B.totalio();
+    transFile.close();
+}]0;miller_cm@cobra:~/csc310/Prog3[miller_cm@cobra Prog3]$ clear
+[3;J[H[2J]0;miller_cm@cobra:~/csc310/Prog3[miller_cm@cobra Prog3]$ ls
+album.baby  album.h.gch  album.o      AlbumTest.cpp  btree.h   createBT.cpp  [0m[38;5;34mmyUpdate[0m  trans1.dat  typescript
+album.cpp   album.large  album.rand   [38;5;34ma.out[0m          btree.o   makefile      OUTPUT    trans2.dat  [38;5;34mupdateBT[0m
+album.h     album.med    album.small  btree.cpp      [38;5;34mcreateBT[0m  [38;5;34mmyCreate[0m      README    tree.ind    updateBT.cpp
+]0;miller_cm@cobra:~/csc310/Prog3[miller_cm@cobra Prog3]$ cre[K[K[Kmake
+c++ -o myCreate createBT.cpp btree.o album.o
+c++ -o myUpdate updateBT.cpp btree.o album.o
+]0;miller_cm@cobra:~/csc310/Prog3[miller_cm@cobra Prog3]$ myCreate album.large a[Ktree.ind 
+Inserting 0, Jesse Mercer, GO BEARS!         Current Height: 0
+First Insert here
+Inserting 1, Jesse Mercer, GO BEARS!         Current Height: 0
+Inserting 2, Jesse Mercer, GO BEARS!         Current Height: 0
+Inserting 3, Jesse Mercer, GO BEARS!         Current Height: 0
+Inserting 4, Jesse Mercer, GO BEARS!         Current Height: 0
+Split Occurring
+Inserting 5, Jesse Mercer, GO BEARS!         Current Height: 1
+Inserting 6, Jesse Mercer, GO BEARS!         Current Height: 1
+Inserting 7, Jesse Mercer, GO BEARS!         Current Height: 1
+Split Occurring
+Inserting 8, Jesse Mercer, GO BEARS!         Current Height: 1
+Inserting 9, Jesse Mercer, GO BEARS!         Current Height: 1
+Inserting 10, Jesse Mercer, GO BEARS!         Current Height: 1
+Split Occurring
+Inserting 11, Jesse Mercer, GO BEARS!         Current Height: 1
+Inserting 12, Jesse Mercer, GO BEARS!         Current Height: 1
+Inserting 13, Jesse Mercer, GO BEARS!         Current Height: 1
+Split Occurring
+Inserting 14, Jesse Mercer, GO BEARS!         Current Height: 1
+Inserting 15, Jesse Mercer, GO BEARS!         Current Height: 1
+Inserting 16, Jesse Mercer, GO BEARS!         Current Height: 1
+Split Occurring
+Split Occurring Again
+Inserting 17, Jesse Mercer, GO BEARS!         Current Height: 2
+Inserting 18, Jesse Mercer, GO BEARS!         Current Height: 2
+Inserting 19, Jesse Mercer, GO BEARS!         Current Height: 2
+Split Occurring
+Inserting 20, Jesse Mercer, GO BEARS!         Current Height: 2
+Inserting 21, Jesse Mercer, GO BEARS!         Current Height: 2
+Inserting 22, Jesse Mercer, GO BEARS!         Current Height: 2
+Split Occurring
+Inserting 23, Jesse Mercer, GO BEARS!         Current Height: 2
+Inserting 24, Jesse Mercer, GO BEARS!         Current Height: 2
+Inserting 25, Jesse Mercer, GO BEARS!         Current Height: 2
+Split Occurring
+Split Occurring Again
+Inserting 26, Jesse Mercer, GO BEARS!         Current Height: 2
+Inserting 27, Jesse Mercer, GO BEARS!         Current Height: 2
+Inserting 28, Jesse Mercer, GO BEARS!         Current Height: 2
+Split Occurring
+Inserting 29, Jesse Mercer, GO BEARS!         Current Height: 2
+Inserting 30, Jesse Mercer, GO BEARS!         Current Height: 2
+Inserting 31, Jesse Mercer, GO BEARS!         Current Height: 2
+Split Occurring
+Inserting 32, Jesse Mercer, GO BEARS!         Current Height: 2
+Inserting 33, Jesse Mercer, GO BEARS!         Current Height: 2
+Inserting 34, Jesse Mercer, GO BEARS!         Current Height: 2
+Split Occurring
+Split Occurring Again
+Inserting 35, Jesse Mercer, GO BEARS!         Current Height: 2
+Inserting 36, Jesse Mercer, GO BEARS!         Current Height: 2
+Inserting 37, Jesse Mercer, GO BEARS!         Current Height: 2
+Split Occurring
+Inserting 38, Jesse Mercer, GO BEARS!         Current Height: 2
+Inserting 39, Jesse Mercer, GO BEARS!         Current Height: 2
+Inserting 40, Jesse Mercer, GO BEARS!         Current Height: 2
+Split Occurring
+Inserting 41, Jesse Mercer, GO BEARS!         Current Height: 2
+Inserting 42, Jesse Mercer, GO BEARS!         Current Height: 2
+Inserting 43, Jesse Mercer, GO BEARS!         Current Height: 2
+Split Occurring
+Split Occurring Again
+Inserting 44, Jesse Mercer, GO BEARS!         Current Height: 2
+Inserting 45, Jesse Mercer, GO BEARS!         Current Height: 2
+Inserting 46, Jesse Mercer, GO BEARS!         Current Height: 2
+Split Occurring
+Inserting 47, Jesse Mercer, GO BEARS!         Current Height: 2
+Inserting 48, Jesse Mercer, GO BEARS!         Current Height: 2
+Inserting 49, Jesse Mercer, GO BEARS!         Current Height: 2
+Split Occurring
+Inserting 50, Jesse Mercer, GO BEARS!         Current Height: 2
+Inserting 51, Jesse Mercer, GO BEARS!         Current Height: 2
+Inserting 52, Jesse Mercer, GO BEARS!         Current Height: 2
+Split Occurring
+Split Occurring Again
+Split Occurring Again
+Inserting 53, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 54, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 55, Jesse Mercer, GO BEARS!         Current Height: 3
+Split Occurring
+Inserting 56, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 57, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 58, Jesse Mercer, GO BEARS!         Current Height: 3
+Split Occurring
+Inserting 59, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 60, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 61, Jesse Mercer, GO BEARS!         Current Height: 3
+Split Occurring
+Split Occurring Again
+Inserting 62, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 63, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 64, Jesse Mercer, GO BEARS!         Current Height: 3
+Split Occurring
+Inserting 65, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 66, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 67, Jesse Mercer, GO BEARS!         Current Height: 3
+Split Occurring
+Inserting 68, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 69, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 70, Jesse Mercer, GO BEARS!         Current Height: 3
+Split Occurring
+Split Occurring Again
+Inserting 71, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 72, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 73, Jesse Mercer, GO BEARS!         Current Height: 3
+Split Occurring
+Inserting 74, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 75, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 76, Jesse Mercer, GO BEARS!         Current Height: 3
+Split Occurring
+Inserting 77, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 78, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 79, Jesse Mercer, GO BEARS!         Current Height: 3
+Split Occurring
+Split Occurring Again
+Split Occurring Again
+Inserting 80, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 81, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 82, Jesse Mercer, GO BEARS!         Current Height: 3
+Split Occurring
+Inserting 83, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 84, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 85, Jesse Mercer, GO BEARS!         Current Height: 3
+Split Occurring
+Inserting 86, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 87, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 88, Jesse Mercer, GO BEARS!         Current Height: 3
+Split Occurring
+Split Occurring Again
+Inserting 89, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 90, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 91, Jesse Mercer, GO BEARS!         Current Height: 3
+Split Occurring
+Inserting 92, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 93, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 94, Jesse Mercer, GO BEARS!         Current Height: 3
+Split Occurring
+Inserting 95, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 96, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 97, Jesse Mercer, GO BEARS!         Current Height: 3
+Split Occurring
+Split Occurring Again
+Inserting 98, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 99, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 100, Jesse Mercer, GO BEARS!         Current Height: 3
+Split Occurring
+Inserting 101, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 102, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 103, Jesse Mercer, GO BEARS!         Current Height: 3
+Split Occurring
+Inserting 104, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 105, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 106, Jesse Mercer, GO BEARS!         Current Height: 3
+Split Occurring
+Split Occurring Again
+Split Occurring Again
+Inserting 107, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 108, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 109, Jesse Mercer, GO BEARS!         Current Height: 3
+Split Occurring
+Inserting 110, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 111, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 112, Jesse Mercer, GO BEARS!         Current Height: 3
+Split Occurring
+Inserting 113, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 114, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 115, Jesse Mercer, GO BEARS!         Current Height: 3
+Split Occurring
+Split Occurring Again
+Inserting 116, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 117, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 118, Jesse Mercer, GO BEARS!         Current Height: 3
+Split Occurring
+Inserting 119, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 120, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 121, Jesse Mercer, GO BEARS!         Current Height: 3
+Split Occurring
+Inserting 122, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 123, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 124, Jesse Mercer, GO BEARS!         Current Height: 3
+Split Occurring
+Split Occurring Again
+Inserting 125, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 126, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 127, Jesse Mercer, GO BEARS!         Current Height: 3
+Split Occurring
+Inserting 128, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 129, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 130, Jesse Mercer, GO BEARS!         Current Height: 3
+Split Occurring
+Inserting 131, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 132, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 133, Jesse Mercer, GO BEARS!         Current Height: 3
+Split Occurring
+Split Occurring Again
+Split Occurring Again
+Inserting 134, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 135, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 136, Jesse Mercer, GO BEARS!         Current Height: 3
+Split Occurring
+Inserting 137, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 138, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 139, Jesse Mercer, GO BEARS!         Current Height: 3
+Split Occurring
+Inserting 140, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 141, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 142, Jesse Mercer, GO BEARS!         Current Height: 3
+Split Occurring
+Split Occurring Again
+Inserting 143, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 144, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 145, Jesse Mercer, GO BEARS!         Current Height: 3
+Split Occurring
+Inserting 146, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 147, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 148, Jesse Mercer, GO BEARS!         Current Height: 3
+Split Occurring
+Inserting 149, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 150, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 151, Jesse Mercer, GO BEARS!         Current Height: 3
+Split Occurring
+Split Occurring Again
+Inserting 152, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 153, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 154, Jesse Mercer, GO BEARS!         Current Height: 3
+Split Occurring
+Inserting 155, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 156, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 157, Jesse Mercer, GO BEARS!         Current Height: 3
+Split Occurring
+Inserting 158, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 159, Jesse Mercer, GO BEARS!         Current Height: 3
+Inserting 160, Jesse Mercer, GO BEARS!         Current Height: 3
+Split Occurring
+Split Occurring Again
+Split Occurring Again
+Split Occurring Again
+Inserting 161, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 162, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 163, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Inserting 164, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 165, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 166, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Inserting 167, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 168, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 169, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Split Occurring Again
+Inserting 170, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 171, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 172, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Inserting 173, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 174, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 175, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Inserting 176, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 177, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 178, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Split Occurring Again
+Inserting 179, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 180, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 181, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Inserting 182, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 183, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 184, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Inserting 185, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 186, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 187, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Split Occurring Again
+Split Occurring Again
+Inserting 188, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 189, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 190, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Inserting 191, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 192, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 193, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Inserting 194, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 195, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 196, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Split Occurring Again
+Inserting 197, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 198, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 199, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Inserting 200, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 201, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 202, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Inserting 203, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 204, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 205, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Split Occurring Again
+Inserting 206, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 207, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 208, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Inserting 209, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 210, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 211, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Inserting 212, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 213, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 214, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Split Occurring Again
+Split Occurring Again
+Inserting 215, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 216, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 217, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Inserting 218, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 219, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 220, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Inserting 221, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 222, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 223, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Split Occurring Again
+Inserting 224, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 225, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 226, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Inserting 227, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 228, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 229, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Inserting 230, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 231, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 232, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Split Occurring Again
+Inserting 233, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 234, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 235, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Inserting 236, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 237, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 238, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Inserting 239, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 240, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 241, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Split Occurring Again
+Split Occurring Again
+Split Occurring Again
+Inserting 242, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 243, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 244, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Inserting 245, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 246, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 247, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Inserting 248, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 249, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 250, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Split Occurring Again
+Inserting 251, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 252, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 253, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Inserting 254, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 255, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 256, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Inserting 257, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 258, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 259, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Split Occurring Again
+Inserting 260, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 261, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 262, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Inserting 263, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 264, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 265, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Inserting 266, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 267, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 268, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Split Occurring Again
+Split Occurring Again
+Inserting 269, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 270, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 271, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Inserting 272, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 273, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 274, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Inserting 275, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 276, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 277, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Split Occurring Again
+Inserting 278, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 279, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 280, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Inserting 281, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 282, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 283, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Inserting 284, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 285, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 286, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Split Occurring Again
+Inserting 287, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 288, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 289, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Inserting 290, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 291, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 292, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Inserting 293, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 294, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 295, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Split Occurring Again
+Split Occurring Again
+Inserting 296, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 297, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 298, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Inserting 299, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 300, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 301, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Inserting 302, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 303, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 304, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Split Occurring Again
+Inserting 305, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 306, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 307, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Inserting 308, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 309, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 310, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Inserting 311, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 312, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 313, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Split Occurring Again
+Inserting 314, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 315, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 316, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Inserting 317, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 318, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 319, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Inserting 320, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 321, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 322, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Split Occurring Again
+Split Occurring Again
+Split Occurring Again
+Inserting 323, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 324, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 325, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Inserting 326, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 327, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 328, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Inserting 329, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 330, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 331, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Split Occurring Again
+Inserting 332, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 333, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 334, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Inserting 335, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 336, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 337, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Inserting 338, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 339, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 340, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Split Occurring Again
+Inserting 341, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 342, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 343, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Inserting 344, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 345, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 346, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Inserting 347, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 348, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 349, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Split Occurring Again
+Split Occurring Again
+Inserting 350, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 351, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 352, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Inserting 353, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 354, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 355, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Inserting 356, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 357, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 358, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Split Occurring Again
+Inserting 359, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 360, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 361, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Inserting 362, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 363, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 364, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Inserting 365, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 366, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 367, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Split Occurring Again
+Inserting 368, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 369, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 370, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Inserting 371, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 372, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 373, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Inserting 374, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 375, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 376, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Split Occurring Again
+Split Occurring Again
+Inserting 377, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 378, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 379, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Inserting 380, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 381, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 382, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Inserting 383, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 384, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 385, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Split Occurring Again
+Inserting 386, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 387, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 388, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Inserting 389, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 390, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 391, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Inserting 392, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 393, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 394, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Split Occurring Again
+Inserting 395, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 396, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 397, Jesse Mercer, GO BEARS!         Current Height: 4
+Split Occurring
+Inserting 398, Jesse Mercer, GO BEARS!         Current Height: 4
+Inserting 399, Jesse Mercer, GO BEARS!         Current Height: 4
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+80, Jesse Mercer, GO BEARS!
+161, Jesse Mercer, GO BEARS!
+242, Jesse Mercer, GO BEARS!
+26, Jesse Mercer, GO BEARS!
+53, Jesse Mercer, GO BEARS!
+8, Jesse Mercer, GO BEARS!
+17, Jesse Mercer, GO BEARS!
+2, Jesse Mercer, GO BEARS!
+5, Jesse Mercer, GO BEARS!
+0, Jesse Mercer, GO BEARS!
+1, Jesse Mercer, GO BEARS!
+3, Jesse Mercer, GO BEARS!
+4, Jesse Mercer, GO BEARS!
+6, Jesse Mercer, GO BEARS!
+7, Jesse Mercer, GO BEARS!
+11, Jesse Mercer, GO BEARS!
+14, Jesse Mercer, GO BEARS!
+9, Jesse Mercer, GO BEARS!
+10, Jesse Mercer, GO BEARS!
+12, Jesse Mercer, GO BEARS!
+13, Jesse Mercer, GO BEARS!
+15, Jesse Mercer, GO BEARS!
+16, Jesse Mercer, GO BEARS!
+20, Jesse Mercer, GO BEARS!
+23, Jesse Mercer, GO BEARS!
+18, Jesse Mercer, GO BEARS!
+19, Jesse Mercer, GO BEARS!
+21, Jesse Mercer, GO BEARS!
+22, Jesse Mercer, GO BEARS!
+24, Jesse Mercer, GO BEARS!
+25, Jesse Mercer, GO BEARS!
+35, Jesse Mercer, GO BEARS!
+44, Jesse Mercer, GO BEARS!
+29, Jesse Mercer, GO BEARS!
+32, Jesse Mercer, GO BEARS!
+27, Jesse Mercer, GO BEARS!
+28, Jesse Mercer, GO BEARS!
+30, Jesse Mercer, GO BEARS!
+31, Jesse Mercer, GO BEARS!
+33, Jesse Mercer, GO BEARS!
+34, Jesse Mercer, GO BEARS!
+38, Jesse Mercer, GO BEARS!
+41, Jesse Mercer, GO BEARS!
+36, Jesse Mercer, GO BEARS!
+37, Jesse Mercer, GO BEARS!
+39, Jesse Mercer, GO BEARS!
+40, Jesse Mercer, GO BEARS!
+42, Jesse Mercer, GO BEARS!
+43, Jesse Mercer, GO BEARS!
+47, Jesse Mercer, GO BEARS!
+50, Jesse Mercer, GO BEARS!
+45, Jesse Mercer, GO BEARS!
+46, Jesse Mercer, GO BEARS!
+48, Jesse Mercer, GO BEARS!
+49, Jesse Mercer, GO BEARS!
+51, Jesse Mercer, GO BEARS!
+52, Jesse Mercer, GO BEARS!
+62, Jesse Mercer, GO BEARS!
+71, Jesse Mercer, GO BEARS!
+56, Jesse Mercer, GO BEARS!
+59, Jesse Mercer, GO BEARS!
+54, Jesse Mercer, GO BEARS!
+55, Jesse Mercer, GO BEARS!
+57, Jesse Mercer, GO BEARS!
+58, Jesse Mercer, GO BEARS!
+60, Jesse Mercer, GO BEARS!
+61, Jesse Mercer, GO BEARS!
+65, Jesse Mercer, GO BEARS!
+68, Jesse Mercer, GO BEARS!
+63, Jesse Mercer, GO BEARS!
+64, Jesse Mercer, GO BEARS!
+66, Jesse Mercer, GO BEARS!
+67, Jesse Mercer, GO BEARS!
+69, Jesse Mercer, GO BEARS!
+70, Jesse Mercer, GO BEARS!
+74, Jesse Mercer, GO BEARS!
+77, Jesse Mercer, GO BEARS!
+72, Jesse Mercer, GO BEARS!
+73, Jesse Mercer, GO BEARS!
+75, Jesse Mercer, GO BEARS!
+76, Jesse Mercer, GO BEARS!
+78, Jesse Mercer, GO BEARS!
+79, Jesse Mercer, GO BEARS!
+107, Jesse Mercer, GO BEARS!
+134, Jesse Mercer, GO BEARS!
+89, Jesse Mercer, GO BEARS!
+98, Jesse Mercer, GO BEARS!
+83, Jesse Mercer, GO BEARS!
+86, Jesse Mercer, GO BEARS!
+81, Jesse Mercer, GO BEARS!
+82, Jesse Mercer, GO BEARS!
+84, Jesse Mercer, GO BEARS!
+85, Jesse Mercer, GO BEARS!
+87, Jesse Mercer, GO BEARS!
+88, Jesse Mercer, GO BEARS!
+92, Jesse Mercer, GO BEARS!
+95, Jesse Mercer, GO BEARS!
+90, Jesse Mercer, GO BEARS!
+91, Jesse Mercer, GO BEARS!
+93, Jesse Mercer, GO BEARS!
+94, Jesse Mercer, GO BEARS!
+96, Jesse Mercer, GO BEARS!
+97, Jesse Mercer, GO BEARS!
+101, Jesse Mercer, GO BEARS!
+104, Jesse Mercer, GO BEARS!
+99, Jesse Mercer, GO BEARS!
+100, Jesse Mercer, GO BEARS!
+102, Jesse Mercer, GO BEARS!
+103, Jesse Mercer, GO BEARS!
+105, Jesse Mercer, GO BEARS!
+106, Jesse Mercer, GO BEARS!
+116, Jesse Mercer, GO BEARS!
+125, Jesse Mercer, GO BEARS!
+110, Jesse Mercer, GO BEARS!
+113, Jesse Mercer, GO BEARS!
+108, Jesse Mercer, GO BEARS!
+109, Jesse Mercer, GO BEARS!
+111, Jesse Mercer, GO BEARS!
+112, Jesse Mercer, GO BEARS!
+114, Jesse Mercer, GO BEARS!
+115, Jesse Mercer, GO BEARS!
+119, Jesse Mercer, GO BEARS!
+122, Jesse Mercer, GO BEARS!
+117, Jesse Mercer, GO BEARS!
+118, Jesse Mercer, GO BEARS!
+120, Jesse Mercer, GO BEARS!
+121, Jesse Mercer, GO BEARS!
+123, Jesse Mercer, GO BEARS!
+124, Jesse Mercer, GO BEARS!
+128, Jesse Mercer, GO BEARS!
+131, Jesse Mercer, GO BEARS!
+126, Jesse Mercer, GO BEARS!
+127, Jesse Mercer, GO BEARS!
+129, Jesse Mercer, GO BEARS!
+130, Jesse Mercer, GO BEARS!
+132, Jesse Mercer, GO BEARS!
+133, Jesse Mercer, GO BEARS!
+143, Jesse Mercer, GO BEARS!
+152, Jesse Mercer, GO BEARS!
+137, Jesse Mercer, GO BEARS!
+140, Jesse Mercer, GO BEARS!
+135, Jesse Mercer, GO BEARS!
+136, Jesse Mercer, GO BEARS!
+138, Jesse Mercer, GO BEARS!
+139, Jesse Mercer, GO BEARS!
+141, Jesse Mercer, GO BEARS!
+142, Jesse Mercer, GO BEARS!
+146, Jesse Mercer, GO BEARS!
+149, Jesse Mercer, GO BEARS!
+144, Jesse Mercer, GO BEARS!
+145, Jesse Mercer, GO BEARS!
+147, Jesse Mercer, GO BEARS!
+148, Jesse Mercer, GO BEARS!
+150, Jesse Mercer, GO BEARS!
+151, Jesse Mercer, GO BEARS!
+155, Jesse Mercer, GO BEARS!
+158, Jesse Mercer, GO BEARS!
+153, Jesse Mercer, GO BEARS!
+154, Jesse Mercer, GO BEARS!
+156, Jesse Mercer, GO BEARS!
+157, Jesse Mercer, GO BEARS!
+159, Jesse Mercer, GO BEARS!
+160, Jesse Mercer, GO BEARS!
+188, Jesse Mercer, GO BEARS!
+215, Jesse Mercer, GO BEARS!
+170, Jesse Mercer, GO BEARS!
+179, Jesse Mercer, GO BEARS!
+164, Jesse Mercer, GO BEARS!
+167, Jesse Mercer, GO BEARS!
+162, Jesse Mercer, GO BEARS!
+163, Jesse Mercer, GO BEARS!
+165, Jesse Mercer, GO BEARS!
+166, Jesse Mercer, GO BEARS!
+168, Jesse Mercer, GO BEARS!
+169, Jesse Mercer, GO BEARS!
+173, Jesse Mercer, GO BEARS!
+176, Jesse Mercer, GO BEARS!
+171, Jesse Mercer, GO BEARS!
+172, Jesse Mercer, GO BEARS!
+174, Jesse Mercer, GO BEARS!
+175, Jesse Mercer, GO BEARS!
+177, Jesse Mercer, GO BEARS!
+178, Jesse Mercer, GO BEARS!
+182, Jesse Mercer, GO BEARS!
+185, Jesse Mercer, GO BEARS!
+180, Jesse Mercer, GO BEARS!
+181, Jesse Mercer, GO BEARS!
+183, Jesse Mercer, GO BEARS!
+184, Jesse Mercer, GO BEARS!
+186, Jesse Mercer, GO BEARS!
+187, Jesse Mercer, GO BEARS!
+197, Jesse Mercer, GO BEARS!
+206, Jesse Mercer, GO BEARS!
+191, Jesse Mercer, GO BEARS!
+194, Jesse Mercer, GO BEARS!
+189, Jesse Mercer, GO BEARS!
+190, Jesse Mercer, GO BEARS!
+192, Jesse Mercer, GO BEARS!
+193, Jesse Mercer, GO BEARS!
+195, Jesse Mercer, GO BEARS!
+196, Jesse Mercer, GO BEARS!
+200, Jesse Mercer, GO BEARS!
+203, Jesse Mercer, GO BEARS!
+198, Jesse Mercer, GO BEARS!
+199, Jesse Mercer, GO BEARS!
+201, Jesse Mercer, GO BEARS!
+202, Jesse Mercer, GO BEARS!
+204, Jesse Mercer, GO BEARS!
+205, Jesse Mercer, GO BEARS!
+209, Jesse Mercer, GO BEARS!
+212, Jesse Mercer, GO BEARS!
+207, Jesse Mercer, GO BEARS!
+208, Jesse Mercer, GO BEARS!
+210, Jesse Mercer, GO BEARS!
+211, Jesse Mercer, GO BEARS!
+213, Jesse Mercer, GO BEARS!
+214, Jesse Mercer, GO BEARS!
+224, Jesse Mercer, GO BEARS!
+233, Jesse Mercer, GO BEARS!
+218, Jesse Mercer, GO BEARS!
+221, Jesse Mercer, GO BEARS!
+216, Jesse Mercer, GO BEARS!
+217, Jesse Mercer, GO BEARS!
+219, Jesse Mercer, GO BEARS!
+220, Jesse Mercer, GO BEARS!
+222, Jesse Mercer, GO BEARS!
+223, Jesse Mercer, GO BEARS!
+227, Jesse Mercer, GO BEARS!
+230, Jesse Mercer, GO BEARS!
+225, Jesse Mercer, GO BEARS!
+226, Jesse Mercer, GO BEARS!
+228, Jesse Mercer, GO BEARS!
+229, Jesse Mercer, GO BEARS!
+231, Jesse Mercer, GO BEARS!
+232, Jesse Mercer, GO BEARS!
+236, Jesse Mercer, GO BEARS!
+239, Jesse Mercer, GO BEARS!
+234, Jesse Mercer, GO BEARS!
+235, Jesse Mercer, GO BEARS!
+237, Jesse Mercer, GO BEARS!
+238, Jesse Mercer, GO BEARS!
+240, Jesse Mercer, GO BEARS!
+241, Jesse Mercer, GO BEARS!
+269, Jesse Mercer, GO BEARS!
+296, Jesse Mercer, GO BEARS!
+323, Jesse Mercer, GO BEARS!
+350, Jesse Mercer, GO BEARS!
+251, Jesse Mercer, GO BEARS!
+260, Jesse Mercer, GO BEARS!
+245, Jesse Mercer, GO BEARS!
+248, Jesse Mercer, GO BEARS!
+243, Jesse Mercer, GO BEARS!
+244, Jesse Mercer, GO BEARS!
+246, Jesse Mercer, GO BEARS!
+247, Jesse Mercer, GO BEARS!
+249, Jesse Mercer, GO BEARS!
+250, Jesse Mercer, GO BEARS!
+254, Jesse Mercer, GO BEARS!
+257, Jesse Mercer, GO BEARS!
+252, Jesse Mercer, GO BEARS!
+253, Jesse Mercer, GO BEARS!
+255, Jesse Mercer, GO BEARS!
+256, Jesse Mercer, GO BEARS!
+258, Jesse Mercer, GO BEARS!
+259, Jesse Mercer, GO BEARS!
+263, Jesse Mercer, GO BEARS!
+266, Jesse Mercer, GO BEARS!
+261, Jesse Mercer, GO BEARS!
+262, Jesse Mercer, GO BEARS!
+264, Jesse Mercer, GO BEARS!
+265, Jesse Mercer, GO BEARS!
+267, Jesse Mercer, GO BEARS!
+268, Jesse Mercer, GO BEARS!
+278, Jesse Mercer, GO BEARS!
+287, Jesse Mercer, GO BEARS!
+272, Jesse Mercer, GO BEARS!
+275, Jesse Mercer, GO BEARS!
+270, Jesse Mercer, GO BEARS!
+271, Jesse Mercer, GO BEARS!
+273, Jesse Mercer, GO BEARS!
+274, Jesse Mercer, GO BEARS!
+276, Jesse Mercer, GO BEARS!
+277, Jesse Mercer, GO BEARS!
+281, Jesse Mercer, GO BEARS!
+284, Jesse Mercer, GO BEARS!
+279, Jesse Mercer, GO BEARS!
+280, Jesse Mercer, GO BEARS!
+282, Jesse Mercer, GO BEARS!
+283, Jesse Mercer, GO BEARS!
+285, Jesse Mercer, GO BEARS!
+286, Jesse Mercer, GO BEARS!
+290, Jesse Mercer, GO BEARS!
+293, Jesse Mercer, GO BEARS!
+288, Jesse Mercer, GO BEARS!
+289, Jesse Mercer, GO BEARS!
+291, Jesse Mercer, GO BEARS!
+292, Jesse Mercer, GO BEARS!
+294, Jesse Mercer, GO BEARS!
+295, Jesse Mercer, GO BEARS!
+305, Jesse Mercer, GO BEARS!
+314, Jesse Mercer, GO BEARS!
+299, Jesse Mercer, GO BEARS!
+302, Jesse Mercer, GO BEARS!
+297, Jesse Mercer, GO BEARS!
+298, Jesse Mercer, GO BEARS!
+300, Jesse Mercer, GO BEARS!
+301, Jesse Mercer, GO BEARS!
+303, Jesse Mercer, GO BEARS!
+304, Jesse Mercer, GO BEARS!
+308, Jesse Mercer, GO BEARS!
+311, Jesse Mercer, GO BEARS!
+306, Jesse Mercer, GO BEARS!
+307, Jesse Mercer, GO BEARS!
+309, Jesse Mercer, GO BEARS!
+310, Jesse Mercer, GO BEARS!
+312, Jesse Mercer, GO BEARS!
+313, Jesse Mercer, GO BEARS!
+317, Jesse Mercer, GO BEARS!
+320, Jesse Mercer, GO BEARS!
+315, Jesse Mercer, GO BEARS!
+316, Jesse Mercer, GO BEARS!
+318, Jesse Mercer, GO BEARS!
+319, Jesse Mercer, GO BEARS!
+321, Jesse Mercer, GO BEARS!
+322, Jesse Mercer, GO BEARS!
+332, Jesse Mercer, GO BEARS!
+341, Jesse Mercer, GO BEARS!
+326, Jesse Mercer, GO BEARS!
+329, Jesse Mercer, GO BEARS!
+324, Jesse Mercer, GO BEARS!
+325, Jesse Mercer, GO BEARS!
+327, Jesse Mercer, GO BEARS!
+328, Jesse Mercer, GO BEARS!
+330, Jesse Mercer, GO BEARS!
+331, Jesse Mercer, GO BEARS!
+335, Jesse Mercer, GO BEARS!
+338, Jesse Mercer, GO BEARS!
+333, Jesse Mercer, GO BEARS!
+334, Jesse Mercer, GO BEARS!
+336, Jesse Mercer, GO BEARS!
+337, Jesse Mercer, GO BEARS!
+339, Jesse Mercer, GO BEARS!
+340, Jesse Mercer, GO BEARS!
+344, Jesse Mercer, GO BEARS!
+347, Jesse Mercer, GO BEARS!
+342, Jesse Mercer, GO BEARS!
+343, Jesse Mercer, GO BEARS!
+345, Jesse Mercer, GO BEARS!
+346, Jesse Mercer, GO BEARS!
+348, Jesse Mercer, GO BEARS!
+349, Jesse Mercer, GO BEARS!
+359, Jesse Mercer, GO BEARS!
+368, Jesse Mercer, GO BEARS!
+377, Jesse Mercer, GO BEARS!
+386, Jesse Mercer, GO BEARS!
+353, Jesse Mercer, GO BEARS!
+356, Jesse Mercer, GO BEARS!
+351, Jesse Mercer, GO BEARS!
+352, Jesse Mercer, GO BEARS!
+354, Jesse Mercer, GO BEARS!
+355, Jesse Mercer, GO BEARS!
+357, Jesse Mercer, GO BEARS!
+358, Jesse Mercer, GO BEARS!
+362, Jesse Mercer, GO BEARS!
+365, Jesse Mercer, GO BEARS!
+360, Jesse Mercer, GO BEARS!
+361, Jesse Mercer, GO BEARS!
+363, Jesse Mercer, GO BEARS!
+364, Jesse Mercer, GO BEARS!
+366, Jesse Mercer, GO BEARS!
+367, Jesse Mercer, GO BEARS!
+371, Jesse Mercer, GO BEARS!
+374, Jesse Mercer, GO BEARS!
+369, Jesse Mercer, GO BEARS!
+370, Jesse Mercer, GO BEARS!
+372, Jesse Mercer, GO BEARS!
+373, Jesse Mercer, GO BEARS!
+375, Jesse Mercer, GO BEARS!
+376, Jesse Mercer, GO BEARS!
+380, Jesse Mercer, GO BEARS!
+383, Jesse Mercer, GO BEARS!
+378, Jesse Mercer, GO BEARS!
+379, Jesse Mercer, GO BEARS!
+381, Jesse Mercer, GO BEARS!
+382, Jesse Mercer, GO BEARS!
+384, Jesse Mercer, GO BEARS!
+385, Jesse Mercer, GO BEARS!
+389, Jesse Mercer, GO BEARS!
+392, Jesse Mercer, GO BEARS!
+395, Jesse Mercer, GO BEARS!
+387, Jesse Mercer, GO BEARS!
+388, Jesse Mercer, GO BEARS!
+390, Jesse Mercer, GO BEARS!
+391, Jesse Mercer, GO BEARS!
+393, Jesse Mercer, GO BEARS!
+394, Jesse Mercer, GO BEARS!
+396, Jesse Mercer, GO BEARS!
+397, Jesse Mercer, GO BEARS!
+398, Jesse Mercer, GO BEARS!
+399, Jesse Mercer, GO BEARS!
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Current Height: 4
+]0;miller_cm@cobra:~/csc310/Prog3[miller_cm@cobra Prog3]$ clear
+[3;J[H[2J]0;miller_cm@cobra:~/csc310/Prog3[miller_cm@cobra Prog3]$ my[K[KmyUpdate tree.ind trans1.dat 
+      Result of search for " 42276 ": Not Found
+      Result of search for " 00100 ": Not Found
+      Result of search for " 08722 ": Not Found
+      Attempting to insert: 01015, My New Artist, My New CD
+First Insert here
+      Insert successful
+Number of Reads: 1
+Number of Writes: 2
+]0;miller_cm@cobra:~/csc310/Prog3[miller_cm@cobra Prog3]$ exit
+exit
+
+Script done on Fri 07 May 2021 02:17:20 PM EDT

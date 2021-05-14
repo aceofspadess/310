@@ -1,0 +1,19 @@
+Using Dr Digh's provide file.h and file.o, i will want to first determine if the provided file is actually a file or if its a directory.
+If the file is actually a file, then all that most be done will be to, write a few methods that will take that file as an argument and
+return to me that files Pmode, Size, and timestamp. I will then used these returned values to create a file object and push that file object 
+into a vector of <File>.
+If the file provided is actually a directory then i can use a c++17 filesystem method called the recursive directory iterator, so that i can grab
+the file path of each file and directory inside of the directory im iterating through. In this loop i will create a file object everytime i 
+grab a file path. If the file path leads to a directory then i will mark it as one, but if it is just a regular file then i will not.
+
+cf: For cf after checking the command line has atleast 4 arguments, i want to save the 3rd argument so that i know what to call the tar
+file, and i want to check the arguments from 4 and up and save them as File objects. I will have a loop that checks the arguments 4 and up, sees
+if they are directories or not, if so then mark them as one and also recursively iterate through them to grab all files and directories inside them.
+Once all file objects are made then i want to open a binary file with the name given from the command line, and first write out the number of files in total i want 
+to Tar. And then, write out the file paths and contents of each file or just the file paths for directories.
+After that close the Tar file.
+
+xf: First check to see if the given Tar file actually exists, if it doesnt throw an error. Otherwise i want to raed in the first int which should be the
+number of file paths inside the binary file and make a loop using this value. This loop will read in the file paths for each file and create that file while
+also filling it with its original contents before -cf. If the loop reads in a directory, then i will create a directory with that file path, if that directory already
+exists then nothing will be done. Once the whole loop is finished then close the binary file.

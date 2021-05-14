@@ -1,0 +1,25 @@
+1) The goal of this program is to hold a database of book records, that can be updated based on transaction actions or changes.
+
+2) Input Files: 
+masterFile: This binary file holds the current list and data on books the system has.
+
+transact: This file will hold a transaction action: Add,Delete,ChangeOnhand,ChangePrice. As well as data so that each action can be completed
+An Add action will include: String author, int onhand, float price, and a String type for data on a book.
+
+newMastFile: This file will be created in the program to represent the newly changed master file after the transact file actions.
+
+copied: This is an intermediate file that is a copy of the master file. This file will first recieve all changes and manipulations done in the program
+and then at the end of the program the bookdata in this file is read into the newMast file and that data is also written to the screen.
+
+error: Creates or overrides a file called "ERRORS". Any and all errors encountered in this program and written out to this file.
+
+errorf: The same as fstream error, but errorf is oppened in append mode so that each error wont override the previous "ERRORS" file.
+
+3) 3 arguments are read into the program.The first argument is for the base master file that will be copied so that it is not changed at all. The first argument
+is also used to fill up a map that holds book isbns and their byte offsets in the file. The second file read in is a transaction file that 
+will tell the program what needs to be done to the date in both the transaction file and the current copied master file. The third file is going to be
+created to hold the final result of changing the copied master file version with actions from the transaction version.
+A loop is created to continous go through the transaction file until all actions are done. If data is added, deleted, or changed then the algorithm
+will first make sure that the data for that book exists in the first place. If not, then an error is added to a seperate error file that can be appened to.
+Once the initial loop is done then all the data in the copied master file is sent to the third argument file and also written out to the screen. Afterwards that copied file
+is deleted, and all remaining open files are closed.

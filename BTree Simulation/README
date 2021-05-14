@@ -1,0 +1,46 @@
+I can use the Pair struct to find out what each node's left and right child are. Once a node is added to the tree, it will get its own pair struct with its left and right offsets 
+initialized at -1 or null. This node will also update its parents left or right offset
+
+
+printTree will use both recursion and a for loop, to loop to the bottom of each branch in the tree, stoping at a null or -1 child, and print each node from root to leaf
+
+
+inorder will print the tree left middle right
+
+
+reverse will print the tree from the leaf to the root
+
+
+getHeight will return how many "trips" it takes to get to the leaves of the tree. For instance going from the root to its child is a height of 1, then from that node to its child 
+the height will then be 2. This wont have to be down for each branch because the Btree is always balanced
+
+
+search will take a node value and search a map of BTnode structs searching for the secondary key, which will be a nodes actual value. The primary key being the index
+
+
+findAddr will return the address of a given node by looping and checking BTNode structs and comparing with their ValueArray contents, returing IndexArray child
+
+
+findpAddr will return the parent address for the node address given, by looping through a map that has a node's index as the primary key and their parents address as a secondary key
+
+
+insert adds a Btnode to the map, aswell as updates the parent node's pair struct
+
+
+printNode returns a nodes ValueArray contents
+
+
+placeNode moves a node to another part of the tree by changing parent offset values, aswell as that nodes indexArray
+
+
+isLeaf returns true if a node's left and right offset return nulls, using either the address of a node or the node it self as a parameter
+
+
+countLeaves will use recursion and a for loop to get to the bottom of each branch and returns and incremented sum once both left and right nodes are null
+
+
+adjRoot checks to see if the 2 provided addresses are next to each other in the tree. An easy way of doing this would be to use one of the addresses to return the parent node, and to then 
+check that parent nodes left and right offsets to see if they match both children
+
+
+
